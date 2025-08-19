@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>App de Reconhecimento Facial Inteligente</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .loader { border: 5px solid #f3f3f3; border-top: 5px solid #3b82f6; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .canvas-overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+        .tab-button.active { border-color: #3b82f6; color: #3b82f6; background-color: #eff6ff; }
+        #confirmation-modal-overlay { transition: opacity 0.3s ease; }
+        #confirmation-modal-content { transition: transform 0.3s ease; }
+        #settings-panel { transition: max-height 0.5s ease-in-out, padding 0.5s ease-in-out; }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800 flex items-center justify-center min-h-screen p-4">
+
+    <div id="loading-overlay" class="fixed inset-0 bg-black bg-opacity-75 flex flex-col items-center justify-center z-50 transition-opacity duration-300">
+        <div class="loader"></div>
+        <p id="loading-status" class="text-white mt-4 text-lg">Carregando modelos e dados...</p>
+    </div>
+
+    <main id="app-content" class="w-full max-w-7xl bg-white rounded-xl shadow-lg p-6 md:p-8 opacity-0 hidden transition-opacity duration-500">
+        <header class="text-center mb-4 relative">
+            <h1 class="text-3xl md:text-4xl font-bold text-gray-900">Reconhecimento Facial com Google Workspace</h1>
+            <p class="text-gray-600 mt-2">Cadastre, reconheça emoções, idade, gênero e registre presenças.</p>
+            <button id="settings-toggle-btn" class="absolute top-0 right-0 p-2 text-gray-500 hover:text-blue-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="bi bi-gear-fill" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c-1.4-.413-1.4-2.397 0-2.81l.34-.1a1.464 1.464 0 0 1 .872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.858 2.929 2.929 0 0 1 0 5.858z"/></svg>
+            </button>
+        </header>
+
+        <section id="settings-panel" class="bg-gray-50 border border-dashed rounded-lg p-0 max-h-0 overflow-hidden mb-8">
+             <div class="p-6">
+                <h2 class="text-xl font-semibold mb-4 text-center">Configurações</h2>
+                <div class="space-y-4">
+                    <div>
+                        <label for="webAppUrlInput" class="block text-sm font-medium text-gray-700">URL da Web App (Apps Script)</label>
+                        <input type="text" id="webAppUrlInput" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm" placeholder="Cole a URL da sua Web App aqui">
+                    </div>
+                    <div>
+                        <label for="sheetIdInput" class="block text-sm font-medium text-gray-700">ID da Planilha Google</label>
+                        <input type="text" id="sheetIdInput" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                    </div>
+                    <div>
+                        <label for="folderIdInput" class="block text-sm font-medium text-gray-700">ID da Pasta do Google Drive</label>
+                        <input type="text" id="folderIdInput" class="mt-1 block w-full p-2 border border-gray-300 rounded-md shadow-sm">
+                    </div>
+                    <button id="save-settings-btn" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg">Salvar Configurações</button>
+                </div>
+            </div>
+        </section>
+
+        <section class="grid lg:grid-cols-2 gap-8 mb-8">
+            <div class="bg-gray-50 p-6 rounded-lg border border-dashed">
+                <h2 class="text-xl font-semibold mb-4 text-center">Passo 1: Cadastrar Pessoas</h2>
+                <div class="flex flex-col items-center">
+                    <img id="registerImage" class="w-40 h-40 object-cover rounded-lg bg-gray-200 mb-4" src="https://placehold.co/200x200/e2e8f0/adb5bd?text=Sua+Foto" alt="Foto para Cadastro">
+                    <input type="file" id="registerUpload" accept="image/*" class="hidden">
+                    <button onclick="document.getElementById('registerUpload').click()" class="w-full mb-4 bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Carregar Foto</button>
+                    <input type="text" id="personName" placeholder="Digite o nome completo" class="w-full p-2 border rounded-lg mb-2">
+                    <input type="email" id="personEmail" placeholder="Digite o e-mail (ID único)" class="w-full p-2 border rounded-lg mb-4">
+                    <button id="registerButton" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Adicionar ao Banco de Dados</button>
+                </div>
+            </div>
+            <div class="bg-gray-50 p-6 rounded-lg border">
+                 <h2 class="text-xl font-semibold mb-4 text-center">Pessoas Cadastradas</h2>
+                 <ul id="peopleList" class="space-y-2 text-gray-700 max-h-80 overflow-y-auto">
+                     <li id="no-people" class="text-center text-gray-500">Carregando dados...</li>
+                 </ul>
+            </div>
+        </section>
+        
+        <nav class="mb-4 border-b border-gray-200">
+            <div class="flex space-x-1 sm:space-x-4" aria-label="Tabs">
+                <button id="tab-image" class="tab-button active font-medium px-3 py-2 text-sm sm:text-base text-gray-500 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">Por Imagem</button>
+                <button id="tab-video" class="tab-button font-medium px-3 py-2 text-sm sm:text-base text-gray-500 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">Por Vídeo</button>
+                <button id="tab-screen" class="tab-button font-medium px-3 py-2 text-sm sm:text-base text-gray-500 border-b-2 border-transparent hover:text-blue-600 hover:border-blue-300">Por Tela</button>
+            </div>
+        </nav>
+
+        <section id="tab-content-image" class="space-y-8">
+            <div class="bg-gray-50 p-6 rounded-lg border border-dashed flex flex-col items-center">
+                <h2 class="text-xl font-semibold mb-4">Analisar Imagem</h2>
+                <div class="relative w-full max-w-3xl mx-auto overflow-hidden">
+                    <img id="testImage" class="w-full h-auto object-cover rounded-lg bg-gray-200 mb-4" src="https://placehold.co/800x600/e2e8f0/adb5bd?text=Carregue+uma+foto+para+análise" alt="Imagem de Teste">
+                    <canvas id="recognitionCanvas" class="canvas-overlay"></canvas>
+                </div>
+                <div class="w-full max-w-3xl flex gap-4 mt-4">
+                    <input type="file" id="testUpload" accept="image/*" class="hidden">
+                    <button onclick="document.getElementById('testUpload').click()" class="flex-1 bg-indigo-500 hover:bg-indigo-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Carregar Foto</button>
+                    <button id="recognizeButton" class="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed" disabled>Reconhecer Pessoas</button>
+                </div>
+            </div>
+            <div id="results-section" class="bg-gray-50 p-6 rounded-lg border hidden">
+                 <h2 class="text-2xl font-bold text-center mb-4">Resultados da Análise</h2>
+                 <div id="status" class="text-center text-lg font-medium p-3 rounded-lg mb-4"></div>
+                 <div class="grid lg:grid-cols-2 gap-8">
+                     <div class="space-y-6">
+                         <div>
+                             <h3 class="text-xl font-semibold mb-2 text-green-700">Pessoas Reconhecidas:</h3>
+                             <div id="recognized-list" class="space-y-4 bg-green-50 p-4 rounded-lg max-h-96 overflow-y-auto"><p>Nenhuma.</p></div>
+                         </div>
+                         <div>
+                             <h3 class="text-xl font-semibold mb-2 text-orange-700">Rostos Desconhecidos:</h3>
+                             <div id="unknown-list" class="space-y-4 bg-orange-50 p-4 rounded-lg max-h-96 overflow-y-auto"><p>Nenhum.</p></div>
+                         </div>
+                     </div>
+                     <div>
+                         <h3 class="text-xl font-semibold mb-2 text-blue-700">Imagem de Referência (Limpa):</h3>
+                         <img id="referenceTestImage" class="w-full h-auto object-cover rounded-lg bg-gray-200" src="https://placehold.co/600x400/e2e8f0/adb5bd?text=Refer%C3%AAncia" alt="Imagem de Referência Limpa">
+                     </div>
+                 </div>
+            </div>
+        </section>
+        <section id="tab-content-video" class="hidden space-y-8">
+            <div class="grid lg:grid-cols-2 gap-8">
+                <div class="bg-gray-50 p-6 rounded-lg border border-dashed flex flex-col items-center">
+                    <h2 class="text-xl font-semibold mb-4">Análise em Tempo Real (Câmera)</h2>
+                    <div class="relative w-full max-w-xl mx-auto overflow-hidden">
+                        <video id="video" class="w-full h-auto rounded-lg bg-gray-800" autoplay muted playsinline></video>
+                        <canvas id="videoCanvas" class="canvas-overlay"></canvas>
+                    </div>
+                    <div class="w-full max-w-xl flex gap-4 mt-4">
+                        <button id="startVideoButton" class="flex-1 bg-teal-500 hover:bg-teal-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Iniciar Câmera</button>
+                        <button id="switchCameraButton" class="flex-1 bg-sky-500 hover:bg-sky-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Inverter Câmera</button>
+                    </div>
+                </div>
+                <div class="bg-gray-50 p-6 rounded-lg border">
+                    <h2 class="text-xl font-semibold mb-4 text-center">Lista de Presença</h2>
+                    <div id="attendance-list" class="space-y-2 max-h-96 overflow-y-auto">
+                        <p class="text-center text-gray-500">Aguardando detecção...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <section id="tab-content-screen" class="hidden space-y-8">
+            <div class="bg-gray-50 p-6 rounded-lg border border-dashed flex flex-col items-center">
+                <h2 class="text-xl font-semibold mb-4">Análise em Tempo Real (Tela)</h2>
+                <div class="relative w-full max-w-3xl mx-auto overflow-hidden">
+                    <video id="screenVideo" class="w-full h-auto rounded-lg bg-gray-800 mb-4" autoplay muted></video>
+                    <canvas id="screenCanvas" class="canvas-overlay"></canvas>
+                </div>
+                <div class="w-full max-w-3xl flex gap-4 mt-4">
+                    <button id="startScreenButton" class="flex-1 bg-cyan-500 hover:bg-cyan-600 text-white font-bold py-2 px-4 rounded-lg transition duration-300">Iniciar Captura de Tela</button>
+                </div>
+            </div>
+             <div id="screen-results-section" class="bg-gray-50 p-6 rounded-lg border hidden">
+                 <h2 class="text-2xl font-bold text-center mb-4">Resultados da Análise de Tela</h2>
+                 <div class="grid lg:grid-cols-2 gap-8">
+                     <div class="space-y-6">
+                         <div>
+                             <h3 class="text-xl font-semibold mb-2 text-green-700">Pessoas Reconhecidas:</h3>
+                             <div id="screen-recognized-list" class="space-y-4 bg-green-50 p-4 rounded-lg max-h-96 overflow-y-auto"><p>Nenhuma.</p></div>
+                         </div>
+                     </div>
+                     <div>
+                         <h3 class="text-xl font-semibold mb-2 text-orange-700">Rostos Desconhecidos:</h3>
+                         <div id="screen-unknown-list" class="space-y-4 bg-orange-50 p-4 rounded-lg max-h-96 overflow-y-auto"><p>Nenhum.</p></div>
+                     </div>
+                 </div>
+            </div>
+        </section>
+    </main>
+    
+    <div id="notification-modal" class="fixed top-5 right-5 bg-white shadow-lg rounded-lg p-4 max-w-sm z-50 opacity-0 -translate-y-10 transition-all duration-300">
+      <p id="notification-message"></p>
+    </div>
+    <div id="confirmation-modal-overlay" class="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 hidden opacity-0">
+        <div id="confirmation-modal-content" class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md transform scale-95">
+            <h3 id="confirmation-title" class="text-xl font-bold mb-4">Confirmar Exclusão</h3>
+            <p id="confirmation-message" class="mb-6">Você tem certeza que deseja excluir esta pessoa? Esta ação não pode ser desfeita.</p>
+            <div class="flex justify-end gap-4">
+                <button id="cancel-delete-btn" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded-lg">Cancelar</button>
+                <button id="confirm-delete-btn" class="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg">Excluir</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+      document.addEventListener('DOMContentLoaded', () => {
+        const elements = {
+            loadingOverlay: document.getElementById('loading-overlay'),
+            loadingStatus: document.getElementById('loading-status'),
+            appContent: document.getElementById('app-content'),
+            statusEl: document.getElementById('status'),
+            registerUpload: document.getElementById('registerUpload'),
+            registerImage: document.getElementById('registerImage'),
+            personNameInput: document.getElementById('personName'),
+            personEmailInput: document.getElementById('personEmail'),
+            registerButton: document.getElementById('registerButton'),
+            peopleList: document.getElementById('peopleList'),
+            testUpload: document.getElementById('testUpload'),
+            testImage: document.getElementById('testImage'),
+            recognizeButton: document.getElementById('recognizeButton'),
+            recognitionCanvas: document.getElementById('recognitionCanvas'),
+            resultsSection: document.getElementById('results-section'),
+            recognizedList: document.getElementById('recognized-list'),
+            unknownList: document.getElementById('unknown-list'),
+            referenceTestImage: document.getElementById('referenceTestImage'),
+            
+            settingsToggleBtn: document.getElementById('settings-toggle-btn'),
+            settingsPanel: document.getElementById('settings-panel'),
+            webAppUrlInput: document.getElementById('webAppUrlInput'),
+            sheetIdInput: document.getElementById('sheetIdInput'),
+            folderIdInput: document.getElementById('folderIdInput'),
+            saveSettingsBtn: document.getElementById('save-settings-btn'),
+            
+            tabImage: document.getElementById('tab-image'),
+            tabVideo: document.getElementById('tab-video'),
+            tabScreen: document.getElementById('tab-screen'),
+            tabContentImage: document.getElementById('tab-content-image'),
+            tabContentVideo: document.getElementById('tab-content-video'),
+            tabContentScreen: document.getElementById('tab-content-screen'),
+            
+            video: document.getElementById('video'),
+            videoCanvas: document.getElementById('videoCanvas'),
+            startVideoButton: document.getElementById('startVideoButton'),
+            switchCameraButton: document.getElementById('switchCameraButton'),
+            attendanceList: document.getElementById('attendance-list'),
+
+            screenVideo: document.getElementById('screenVideo'),
+            screenCanvas: document.getElementById('screenCanvas'),
+            startScreenButton: document.getElementById('startScreenButton'),
+            screenResultsSection: document.getElementById('screen-results-section'),
+            screenRecognizedList: document.getElementById('screen-recognized-list'),
+            screenUnknownList: document.getElementById('screen-unknown-list'),
+
+            notificationModal: document.getElementById('notification-modal'),
+            notificationMessage: document.getElementById('notification-message'),
+            confirmation: {
+                overlay: document.getElementById('confirmation-modal-overlay'),
+                content: document.getElementById('confirmation-modal-content'),
+                title: document.getElementById('confirmation-title'),
+                message: document.getElementById('confirmation-message'),
+                cancelBtn: document.getElementById('cancel-delete-btn'),
+                confirmBtn: document.getElementById('confirm-delete-btn'),
+            }
+        };
+
+        let faceMatcher = null;
+        let registerFile = null;
+        let testImageFile = null;
+        let peopleData = [];
+        let videoStream = null;
+        let screenStream = null;
+        let recognitionInterval = null;
+        let tempDescriptorForRegistration = null;
+        let currentFacingMode = 'user';
+        let recognizedInVideo = new Set();
+        let WEB_APP_URL = '';
+        
+        const emotionTranslations = { neutral: 'Neutro', happy: 'Feliz', sad: 'Triste', angry: 'Zangado', fearful: 'Assustado', disgusted: 'Com nojo', surprised: 'Surpreso' };
+        const genderTranslations = { male: 'Masculino', female: 'Feminino' };
+
+        function showNotification(message, type = 'success') {
+            elements.notificationMessage.textContent = message;
+            const modal = elements.notificationModal;
+            modal.className = `fixed top-5 right-5 shadow-lg rounded-lg p-4 max-w-sm z-50 opacity-0 -translate-y-10 transition-all duration-300 ${type === 'success' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`;
+            
+            setTimeout(() => { modal.classList.remove('opacity-0', '-translate-y-10'); modal.classList.add('opacity-100', 'translate-y-0'); }, 10);
+            setTimeout(() => { modal.classList.remove('opacity-100', 'translate-y-0'); modal.classList.add('opacity-0', '-translate-y-10'); }, 4000);
+        }
+
+        function updateStatus(message, type = 'info') {
+            if (elements.statusEl) {
+                elements.statusEl.textContent = message;
+                const classMap = { success: 'bg-green-100 text-green-800', error: 'bg-red-100 text-red-800', info: 'bg-yellow-100 text-yellow-800' };
+                elements.statusEl.className = `text-center text-lg font-medium p-3 rounded-lg mb-4 ${classMap[type]}`;
+            }
+        }
+        
+        async function apiGet(action) {
+            if (!WEB_APP_URL) throw new Error("URL da Web App não configurada.");
+            const response = await fetch(`${WEB_APP_URL}?action=${action}`);
+            if (!response.ok) throw new Error(`Erro de rede: ${response.statusText}`);
+            return response.json();
+        }
+
+        async function apiPost(action, payload) {
+            if (!WEB_APP_URL) throw new Error("URL da Web App não configurada.");
+            const response = await fetch(WEB_APP_URL, {
+                method: 'POST',
+                mode: 'no-cors', // Necessário para o Apps Script
+                cache: 'no-cache',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action, payload }),
+                redirect: 'follow'
+            });
+             // Para 'no-cors', a resposta é opaca, então não podemos ler o corpo aqui.
+             // A lógica de sucesso/erro será baseada no que o servidor faz.
+             // Para obter uma resposta real, a API do Apps Script precisa lidar com pedidos pre-flight (OPTIONS).
+             // Por simplicidade, vamos assumir que o pedido foi bem-sucedido se não houver erro de rede.
+            return { success: true, message: 'Ação enviada. Verifique o resultado na planilha.' };
+        }
+
+
+        async function loadInitialData() {
+            try {
+                const MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+                elements.loadingStatus.textContent = 'Carregando modelos de IA...';
+                await Promise.all([
+                    faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL),
+                    faceapi.nets.faceExpressionNet.loadFromUri(MODEL_URL),
+                    faceapi.nets.ageGenderNet.loadFromUri(MODEL_URL)
+                ]);
+
+                elements.loadingStatus.textContent = 'Carregando configurações...';
+                
+                WEB_APP_URL = localStorage.getItem('WEB_APP_URL') || '';
+                if (!WEB_APP_URL) {
+                    showNotification('Por favor, configure a URL da Web App nas configurações.', 'info');
+                    elements.loadingOverlay.classList.add('opacity-0');
+                    setTimeout(() => {
+                        elements.loadingOverlay.style.display = 'none';
+                        elements.appContent.classList.remove('hidden');
+                        elements.appContent.classList.add('opacity-100');
+                    }, 300);
+                    return;
+                }
+                elements.webAppUrlInput.value = WEB_APP_URL;
+
+                const config = await apiGet('getConfiguration');
+                elements.sheetIdInput.value = config.sheetId;
+                elements.folderIdInput.value = config.folderId;
+                
+                elements.loadingStatus.textContent = 'Carregando dados do banco de dados...';
+                const peopleResult = await apiGet('loadPeople');
+                if (peopleResult.success) {
+                    peopleData = peopleResult.data;
+                    faceMatcher = null;
+                    if (peopleData && peopleData.length > 0) {
+                        const labeledDescriptors = peopleData.map(p => new faceapi.LabeledFaceDescriptors(p.email, [new Float32Array(Object.values(p.descriptor))]));
+                        faceMatcher = new faceapi.FaceMatcher(labeledDescriptors);
+                    }
+                    updatePeopleListUI();
+                } else {
+                    throw new Error(peopleResult.message);
+                }
+
+                elements.loadingOverlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    elements.loadingOverlay.style.display = 'none';
+                    elements.appContent.classList.remove('hidden');
+                    elements.appContent.classList.add('opacity-100');
+                }, 300);
+
+            } catch (error) {
+                showNotification(`Erro ao carregar: ${error.message}`, 'error');
+                elements.loadingOverlay.style.display = 'none';
+                elements.appContent.classList.remove('hidden');
+                elements.appContent.classList.add('opacity-100');
+            }
+        }
+        
+        async function saveSettings() {
+            const newWebAppUrl = elements.webAppUrlInput.value.trim();
+            const config = {
+                sheetId: elements.sheetIdInput.value.trim(),
+                folderId: elements.folderIdInput.value.trim()
+            };
+
+            if (!newWebAppUrl || !config.sheetId || !config.folderId) {
+                showNotification('Todos os campos de configuração são obrigatórios.', 'error');
+                return;
+            }
+            
+            WEB_APP_URL = newWebAppUrl;
+            localStorage.setItem('WEB_APP_URL', WEB_APP_URL);
+            
+            elements.saveSettingsBtn.disabled = true;
+            elements.saveSettingsBtn.textContent = 'Salvando...';
+
+            try {
+                // A resposta de um POST 'no-cors' é opaca, então não podemos ler a mensagem de sucesso
+                // diretamente. Vamos assumir o sucesso e informar o usuário.
+                await apiPost('saveConfiguration', config);
+                showNotification('Configurações salvas. A recarregar dados...', 'success');
+                loadInitialData();
+            } catch (error) {
+                showNotification(`Erro ao salvar: ${error.message}`, 'error');
+            } finally {
+                elements.saveSettingsBtn.disabled = false;
+                elements.saveSettingsBtn.textContent = 'Salvar Configurações';
+            }
+        }
+
+        function toggleSettingsPanel() {
+            const panel = elements.settingsPanel;
+            if (panel.style.maxHeight && panel.style.maxHeight !== '0px') {
+                panel.style.maxHeight = '0px';
+                panel.style.paddingTop = '0';
+                panel.style.paddingBottom = '0';
+            } else {
+                panel.style.paddingTop = '1.5rem';
+                panel.style.paddingBottom = '1.5rem';
+                panel.style.maxHeight = panel.scrollHeight + "px";
+            }
+        }
+
+        // --- As outras funções (runImageRecognition, createFaceCard, etc.) permanecem as mesmas ---
+        // --- Apenas as chamadas a google.script.run são substituídas por apiPost ---
+
+        async function registerPerson() {
+            const name = elements.personNameInput.value.trim();
+            const email = elements.personEmailInput.value.trim();
+            if (!registerFile || !name || !email) return;
+
+            elements.registerButton.disabled = true;
+            elements.registerButton.textContent = 'Processando...';
+
+            try {
+                let descriptorToSave = tempDescriptorForRegistration;
+                let age, gender;
+
+                if (!descriptorToSave) {
+                    const imageElement = await faceapi.bufferToImage(registerFile);
+                    const detection = await faceapi.detectSingleFace(imageElement).withFaceLandmarks().withFaceDescriptor().withAgeAndGender();
+                    if (!detection) {
+                        showNotification("Nenhum rosto detectado na foto de cadastro.", 'error');
+                        return;
+                    }
+                    descriptorToSave = detection.descriptor;
+                    age = Math.round(detection.age);
+                    gender = genderTranslations[detection.gender] || detection.gender;
+                }
+
+                const reader = new FileReader();
+                reader.onloadend = async () => {
+                    const personData = { 
+                        name, email, age, gender, 
+                        imageData: reader.result, 
+                        descriptor: JSON.stringify(Array.from(descriptorToSave)) 
+                    };
+                    try {
+                        await apiPost('savePerson', personData);
+                        showNotification(`${name} salvo com sucesso! A recarregar...`, 'success');
+                        elements.personNameInput.value = '';
+                        elements.personEmailInput.value = '';
+                        elements.registerImage.src = 'https://placehold.co/200x200/e2e8f0/adb5bd?text=Sua+Foto';
+                        registerFile = null;
+                        tempDescriptorForRegistration = null;
+                        loadInitialData();
+                    } catch (e) {
+                        showNotification(`Erro ao salvar: ${e.message}`, 'error');
+                    } finally {
+                        elements.registerButton.textContent = 'Adicionar ao Banco de Dados';
+                        checkButtonsState();
+                    }
+                };
+                reader.readAsDataURL(registerFile);
+
+            } catch (error) {
+                showNotification('Erro ao processar imagem: ' + error.message, 'error');
+                elements.registerButton.textContent = 'Adicionar ao Banco de Dados';
+                checkButtonsState();
+            }
+        }
+
+        async function confirmDeletion(name, email) {
+            // ... (lógica do modal de confirmação)
+            deletionCallback = async () => {
+                elements.confirmation.confirmBtn.disabled = true;
+                elements.confirmation.confirmBtn.textContent = 'Excluindo...';
+                try {
+                    await apiPost('deletePerson', { email });
+                    showNotification(`${name} excluído com sucesso. A recarregar...`, 'success');
+                    loadInitialData();
+                } catch (e) {
+                    showNotification(`Erro ao excluir: ${e.message}`, 'error');
+                } finally {
+                    closeConfirmationModal();
+                    elements.confirmation.confirmBtn.disabled = false;
+                    elements.confirmation.confirmBtn.textContent = 'Excluir';
+                }
+            };
+        }
+
+        // --- O resto do seu código JavaScript (sem alterações) ---
+        
+        function updatePeopleListUI() {
+            elements.peopleList.innerHTML = '';
+            if (!peopleData || peopleData.length === 0) {
+                elements.peopleList.innerHTML = '<li class="text-center text-gray-500">Nenhuma pessoa cadastrada.</li>';
+                return;
+            }
+            const peopleCount = peopleData.reduce((acc, person) => {
+                acc[person.email] = acc[person.email] || { name: person.name, count: 0 };
+                acc[person.email].count++;
+                return acc;
+            }, {});
+            
+            Object.entries(peopleCount).forEach(([email, person]) => {
+                const li = document.createElement('li');
+                li.className = "flex items-center justify-between bg-white p-2 rounded-md shadow-sm";
+                const text = document.createElement('span');
+                text.textContent = `${person.name} (${person.count} foto(s))`;
+                const deleteBtn = document.createElement('button');
+                deleteBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-trash" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>`;
+                deleteBtn.className = "text-gray-400 hover:text-red-600 transition-colors";
+                deleteBtn.onclick = () => confirmDeletion(person.name, email);
+                li.appendChild(text);
+                li.appendChild(deleteBtn);
+                elements.peopleList.appendChild(li);
+            });
+        }
+        
+        async function runImageRecognition() {
+            if (!testImageFile || !faceMatcher) return;
+            updateStatus('Analisando foto...', 'info');
+            elements.resultsSection.classList.remove('hidden');
+            elements.recognizeButton.disabled = true;
+
+            try {
+                const image = await faceapi.bufferToImage(testImageFile);
+                const displaySize = { width: elements.testImage.clientWidth, height: elements.testImage.clientHeight };
+                faceapi.matchDimensions(elements.recognitionCanvas, displaySize);
+                
+                const detections = await faceapi.detectAllFaces(image).withFaceLandmarks().withFaceDescriptors().withFaceExpressions().withAgeAndGender();
+                const resizedDetections = faceapi.resizeResults(detections, displaySize);
+                
+                elements.recognizedList.innerHTML = '';
+                elements.unknownList.innerHTML = '';
+                elements.recognitionCanvas.getContext('2d').clearRect(0, 0, elements.recognitionCanvas.width, elements.recognitionCanvas.height);
+                
+                if (detections.length === 0) {
+                    updateStatus('Nenhum rosto foi detectado na imagem.', 'info');
+                    return;
+                }
+
+                const faceCanvases = await faceapi.extractFaces(image, detections.map(d => d.detection.box));
+                let unknownCount = 0;
+                const recognizedEmails = new Set();
+
+                resizedDetections.forEach((d, i) => {
+                    const bestMatch = faceMatcher.findBestMatch(d.descriptor);
+                    const topEmotion = Object.keys(d.expressions).reduce((a, b) => d.expressions[a] > d.expressions[b] ? a : b);
+                    const personData = { emotion: emotionTranslations[topEmotion] || topEmotion, age: Math.round(d.age), gender: genderTranslations[d.gender] || d.gender };
+
+                    let label, color;
+                    if (bestMatch.label !== 'unknown') {
+                        const person = peopleData.find(p => p.email === bestMatch.label);
+                        label = `${person.name} (~${personData.age} anos)`;
+                        color = 'green';
+                        if (!recognizedEmails.has(person.email)) {
+                            recognizedEmails.add(person.email);
+                            const card = createFaceCard(faceCanvases[i], d.descriptor, person.name, personData, false, elements.recognizedList, elements.unknownList);
+                            elements.recognizedList.appendChild(card);
+                        }
+                    } else {
+                        unknownCount++;
+                        label = `Desconhecido ${unknownCount}`;
+                        color = 'red';
+                        const card = createFaceCard(faceCanvases[i], d.descriptor, label, personData, true, elements.recognizedList, elements.unknownList);
+                        elements.unknownList.appendChild(card);
+                    }
+                    new faceapi.draw.DrawBox(d.detection.box, { label, boxColor: color }).draw(elements.recognitionCanvas);
+                });
+                
+                if (elements.recognizedList.childElementCount === 0) elements.recognizedList.innerHTML = '<p>Nenhuma pessoa do banco de dados foi reconhecida.</p>';
+                if (elements.unknownList.childElementCount === 0) elements.unknownList.innerHTML = '<p>Nenhum rosto desconhecido encontrado.</p>';
+                updateStatus('Análise concluída!', 'success');
+            } catch (error) {
+                updateStatus(`Erro na análise: ${error.message}`, 'error');
+            } finally {
+                elements.recognizeButton.disabled = false;
+            }
+        }
+
+        function createFaceCard(faceCanvas, descriptor, name, data, isUnknown, recognizedListEl, unknownListEl) {
+            const card = document.createElement('div');
+            card.className = "flex items-center gap-4 bg-white p-2 rounded-lg shadow-sm";
+            const imgEl = document.createElement('img');
+            imgEl.src = faceCanvas.toDataURL();
+            imgEl.className = "w-16 h-16 rounded-md object-cover border";
+            const infoContainer = document.createElement('div');
+            infoContainer.className = "flex-grow flex items-center justify-between";
+            const textDiv = document.createElement('div');
+
+            if (isUnknown) {
+                textDiv.innerHTML = `<p class="font-semibold text-orange-600">${name}</p><p class="text-sm text-gray-600">Emoção: ${data.emotion}</p>`;
+                const button = document.createElement('button');
+                button.textContent = 'Cadastrar este rosto';
+                button.className = 'w-full mt-1 bg-orange-500 hover:bg-orange-600 text-white text-sm py-1 px-2 rounded-md transition-colors';
+                button.onclick = () => {
+                    elements.personNameInput.value = '';
+                    elements.personEmailInput.value = '';
+                    elements.registerImage.src = faceCanvas.toDataURL();
+                    tempDescriptorForRegistration = descriptor;
+                    faceCanvas.toBlob(blob => {
+                        registerFile = new File([blob], "unknown_face.jpg", { type: "image/jpeg" });
+                        checkButtonsState();
+                    });
+                    showNotification("Dados preenchidos. Adicione nome e e-mail e clique em 'Adicionar'.");
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    elements.personNameInput.focus();
+                };
+                textDiv.appendChild(button);
+            } else {
+                textDiv.innerHTML = `<p class="font-semibold text-green-600">${name}</p><p class="text-sm text-gray-600">Emoção: ${data.emotion}, Idade: ${data.age}, Gênero: ${data.gender}</p>`;
+                const correctButton = document.createElement('button');
+                correctButton.textContent = 'Corrigir';
+                correctButton.className = 'bg-yellow-500 hover:bg-yellow-600 text-white text-xs py-1 px-2 rounded-md';
+                correctButton.onclick = () => {
+                    card.remove();
+                    const unknownCard = createFaceCard(faceCanvas, descriptor, 'Desconhecido (Corrigido)', { emotion: data.emotion }, true, recognizedListEl, unknownListEl);
+                    if (unknownListEl.querySelector('p')) unknownListEl.innerHTML = '';
+                    unknownListEl.appendChild(unknownCard);
+                    showNotification(`'${name}' foi movido para desconhecidos para correção.`, 'info');
+                };
+                infoContainer.appendChild(textDiv);
+                infoContainer.appendChild(correctButton);
+            }
+            
+            if (isUnknown) infoContainer.appendChild(textDiv);
+            card.appendChild(imgEl);
+            card.appendChild(infoContainer);
+            return card;
+        }
+        
+        function stopAllStreams() {
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                elements.video.srcObject = null;
+                elements.startVideoButton.textContent = 'Iniciar Câmera';
+                elements.videoCanvas.getContext('2d').clearRect(0, 0, elements.videoCanvas.width, elements.videoCanvas.height);
+                elements.attendanceList.innerHTML = '<p class="text-center text-gray-500">Aguardando detecção...</p>';
+            }
+            if (screenStream) {
+                screenStream.getTracks().forEach(track => track.stop());
+                screenStream = null;
+                elements.screenVideo.srcObject = null;
+                elements.startScreenButton.textContent = 'Iniciar Captura de Tela';
+                elements.screenCanvas.getContext('2d').clearRect(0, 0, elements.screenCanvas.width, elements.screenCanvas.height);
+                elements.screenResultsSection.classList.add('hidden');
+            }
+            if (recognitionInterval) {
+                clearInterval(recognitionInterval);
+                recognitionInterval = null;
+            }
+        }
+
+        async function startVideoStream(facingMode) {
+            stopAllStreams();
+            if (!faceMatcher) {
+                showNotification("Cadastre pelo menos uma pessoa antes de iniciar.", 'error');
+                return;
+            }
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode } });
+                elements.video.srcObject = videoStream;
+                elements.startVideoButton.textContent = 'Parar Câmera';
+                elements.attendanceList.innerHTML = '';
+                recognizedInVideo.clear();
+                
+                elements.video.onplay = () => {
+                    recognitionInterval = setInterval(() => runStreamRecognition(elements.video, elements.videoCanvas, true), 500);
+                };
+            } catch (err) {
+                showNotification("Não foi possível acessar a câmera. Verifique as permissões.", 'error');
+            }
+        }
+
+        async function startScreenCapture() {
+            stopAllStreams();
+            if (!faceMatcher) {
+                showNotification("Cadastre pelo menos uma pessoa antes de iniciar.", 'error');
+                return;
+            }
+            try {
+                screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+                elements.screenVideo.srcObject = screenStream;
+                elements.startScreenButton.textContent = 'Parar Captura';
+                elements.screenResultsSection.classList.remove('hidden');
+                elements.screenRecognizedList.innerHTML = '';
+                elements.screenUnknownList.innerHTML = '';
+                
+                screenStream.getVideoTracks()[0].onended = () => stopAllStreams();
+
+                recognitionInterval = setInterval(() => runStreamRecognition(elements.screenVideo, elements.screenCanvas, false), 500);
+            } catch (err) {
+                showNotification("Não foi possível iniciar a captura de tela.", 'error');
+            }
+        }
+
+        async function runStreamRecognition(videoEl, canvasEl, isAttendance) {
+            if (!faceMatcher) return;
+
+            const displaySize = { width: videoEl.clientWidth, height: videoEl.clientHeight };
+            faceapi.matchDimensions(canvasEl, displaySize);
+            
+            const detections = await faceapi.detectAllFaces(videoEl, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 })).withFaceLandmarks().withFaceDescriptors();
+            const resizedDetections = faceapi.resizeResults(detections, displaySize);
+            
+            canvasEl.getContext('2d').clearRect(0, 0, canvasEl.width, canvasEl.height);
+
+            const recognizedEmailsThisFrame = new Set();
+            if(!isAttendance) {
+                elements.screenRecognizedList.innerHTML = '';
+                elements.screenUnknownList.innerHTML = '';
+            }
+
+            for (const d of resizedDetections) {
+                const bestMatch = faceMatcher.findBestMatch(d.descriptor);
+                let label, color;
+                if (bestMatch.label !== 'unknown') {
+                    const person = peopleData.find(p => p.email === bestMatch.label);
+                    label = person.name;
+                    color = 'green';
+                    
+                    if (isAttendance) {
+                        if (!recognizedInVideo.has(person.email)) {
+                            recognizedInVideo.add(person.email);
+                            addPersonToAttendanceList(person);
+                        }
+                    } else if (!recognizedEmailsThisFrame.has(person.email)) {
+                        recognizedEmailsThisFrame.add(person.email);
+                        const faceCanvas = await faceapi.extractFaces(videoEl, [d.detection]);
+                        const card = createFaceCard(faceCanvas[0], d.descriptor, person.name, {}, false, elements.screenRecognizedList, elements.screenUnknownList);
+                        elements.screenRecognizedList.appendChild(card);
+                    }
+                } else {
+                    label = 'Desconhecido';
+                    color = 'red';
+                    if (!isAttendance) {
+                         const faceCanvas = await faceapi.extractFaces(videoEl, [d.detection]);
+                         const card = createFaceCard(faceCanvas[0], d.descriptor, 'Desconhecido', {}, true, elements.screenRecognizedList, elements.screenUnknownList);
+                         elements.screenUnknownList.appendChild(card);
+                    }
+                }
+                new faceapi.draw.DrawBox(d.detection.box, { label, boxColor: color }).draw(canvasEl);
+            }
+        }
+        
+        function switchTab(activeTab) {
+            stopAllStreams();
+            ['image', 'video', 'screen'].forEach(tab => {
+                const isCurrentTab = tab === activeTab;
+                elements[`tab${tab.charAt(0).toUpperCase() + tab.slice(1)}`].classList.toggle('active', isCurrentTab);
+                elements[`tabContent${tab.charAt(0).toUpperCase() + tab.slice(1)}`].classList.toggle('hidden', !isCurrentTab);
+            });
+        }
+        
+        let deletionCallback = null;
+        function confirmDeletion(name, email) {
+            elements.confirmation.message.textContent = `Você tem certeza que deseja excluir '${name}'? Todas as fotos e dados associados serão removidos.`;
+            elements.confirmation.overlay.classList.remove('hidden');
+            setTimeout(() => {
+                elements.confirmation.overlay.classList.remove('opacity-0');
+                elements.confirmation.content.classList.remove('scale-95');
+            }, 10);
+
+            deletionCallback = async () => {
+                elements.confirmation.confirmBtn.disabled = true;
+                elements.confirmation.confirmBtn.textContent = 'Excluindo...';
+                try {
+                    await apiPost('deletePerson', { email });
+                    showNotification(`${name} foi excluído com sucesso.`, 'success');
+                    loadInitialData(); // Recarrega os dados após a exclusão
+                } catch (error) {
+                    showNotification(`Erro ao excluir: ${error.message}`, 'error');
+                } finally {
+                    closeConfirmationModal();
+                    elements.confirmation.confirmBtn.disabled = false;
+                    elements.confirmation.confirmBtn.textContent = 'Excluir';
+                }
+            };
+        }
+
+        function closeConfirmationModal() {
+            elements.confirmation.overlay.classList.add('opacity-0');
+            elements.confirmation.content.classList.add('scale-95');
+            setTimeout(() => { elements.confirmation.overlay.classList.add('hidden'); }, 300);
+            deletionCallback = null;
+        }
+
+        function initialize() {
+            elements.settingsToggleBtn.addEventListener('click', toggleSettingsPanel);
+            elements.saveSettingsBtn.addEventListener('click', saveSettings);
+            
+            [elements.personNameInput, elements.personEmailInput].forEach(input => input.addEventListener('input', checkButtonsState));
+            elements.registerUpload.addEventListener('change', handleRegisterUpload);
+            elements.registerButton.addEventListener('click', registerPerson);
+            elements.testUpload.addEventListener('change', handleTestUpload);
+            elements.recognizeButton.addEventListener('click', runImageRecognition);
+            
+            elements.tabImage.addEventListener('click', () => switchTab('image'));
+            elements.tabVideo.addEventListener('click', () => switchTab('video'));
+            elements.tabScreen.addEventListener('click', () => switchTab('screen'));
+            
+            elements.startVideoButton.addEventListener('click', () => videoStream ? stopAllStreams() : startVideoStream(currentFacingMode));
+            elements.switchCameraButton.addEventListener('click', () => startVideoStream(currentFacingMode = currentFacingMode === 'user' ? 'environment' : 'user'));
+            elements.startScreenButton.addEventListener('click', () => screenStream ? stopAllStreams() : startScreenCapture());
+
+            elements.confirmation.confirmBtn.addEventListener('click', () => { if (deletionCallback) deletionCallback(); });
+            elements.confirmation.cancelBtn.addEventListener('click', closeConfirmationModal);
+            elements.confirmation.overlay.addEventListener('click', (e) => { if (e.target === elements.confirmation.overlay) closeConfirmationModal(); });
+
+            loadInitialData();
+        }
+        
+        function checkButtonsState() {
+            const isEmailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(elements.personEmailInput.value);
+            elements.registerButton.disabled = !(registerFile && elements.personNameInput.value.trim() && isEmailValid);
+            elements.recognizeButton.disabled = !(testImageFile && faceMatcher);
+        }
+
+        function handleRegisterUpload(e) {
+            if (e.target.files.length > 0) {
+                registerFile = e.target.files[0];
+                elements.registerImage.src = URL.createObjectURL(registerFile);
+                tempDescriptorForRegistration = null;
+                checkButtonsState();
+                e.target.value = null;
+            }
+        }
+        
+        function handleTestUpload(e) {
+            if (e.target.files.length > 0) {
+                testImageFile = e.target.files[0];
+                const fileUrl = URL.createObjectURL(testImageFile);
+                elements.testImage.src = fileUrl;
+                elements.referenceTestImage.src = fileUrl;
+                elements.testImage.onload = () => {
+                    checkButtonsState();
+                    elements.recognitionCanvas.getContext('2d').clearRect(0, 0, elements.recognitionCanvas.width, elements.recognitionCanvas.height);
+                    elements.resultsSection.classList.add('hidden');
+                }
+                e.target.value = null;
+            }
+        }
+        
+        function addPersonToAttendanceList(person) {
+            const personDiv = document.createElement('div');
+            personDiv.className = 'flex items-center justify-between bg-white p-2 rounded-lg shadow-sm';
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'font-medium';
+            nameSpan.textContent = person.name;
+            
+            const button = document.createElement('button');
+            button.dataset.email = person.email;
+            button.className = 'bg-blue-500 hover:bg-blue-600 text-white text-sm py-1 px-3 rounded-md transition-colors';
+            button.textContent = 'Marcar Presença';
+            
+            button.onclick = async (e) => {
+                const btn = e.target;
+                btn.disabled = true;
+                btn.textContent = 'Marcando...';
+                try {
+                    await apiPost('markAttendance', person);
+                    btn.textContent = 'Presente ✔️';
+                    btn.className = 'bg-green-500 text-white text-sm py-1 px-3 rounded-md';
+                    showNotification(`Presença de ${person.name} marcada.`, 'success');
+                } catch(err) {
+                    showNotification(`Erro ao marcar presença: ${err.message}`, 'error');
+                    btn.disabled = false;
+                    btn.textContent = 'Marcar Presença';
+                }
+            };
+            
+            personDiv.appendChild(nameSpan);
+            personDiv.appendChild(button);
+            elements.attendanceList.appendChild(personDiv);
+        }
+
+        initialize();
+      });
+    </script>
+</body>
+</html>
