@@ -253,9 +253,6 @@
         let tempDescriptorForRegistration = null;
         let currentFacingMode = 'user';
         let recognizedInVideo = new Set();
-        
-        // ** ALTERAÇÃO PRINCIPAL AQUI **
-        // O seu URL de implantação foi adicionado como valor padrão.
         let WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbwNuL-FunrKEEzoA5wq8p-2k7w0mRFWZRJkFOOHiPQCtzNvhf7gmCc5xnrV4PIi1pc2/exec';
         
         const emotionTranslations = { neutral: 'Neutro', happy: 'Feliz', sad: 'Triste', angry: 'Zangado', fearful: 'Assustado', disgusted: 'Com nojo', surprised: 'Surpreso' };
@@ -289,13 +286,13 @@
             if (!WEB_APP_URL) throw new Error("URL da Web App não configurada.");
             const response = await fetch(WEB_APP_URL, {
                 method: 'POST',
-                mode: 'no-cors', 
+                // ** CORREÇÃO AQUI: Removido o modo 'no-cors' **
                 cache: 'no-cache',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // Alterado para text/plain
                 body: JSON.stringify({ action, payload }),
                 redirect: 'follow'
             });
-            return { success: true, message: 'Ação enviada. Verifique o resultado na planilha.' };
+            return response.json(); // Agora podemos ler a resposta
         }
 
 
@@ -313,12 +310,11 @@
 
                 elements.loadingStatus.textContent = 'Carregando configurações...';
                 
-                // Tenta carregar um URL guardado, caso contrário usa o que está no código.
                 const savedUrl = localStorage.getItem('WEB_APP_URL');
                 if (savedUrl) {
                     WEB_APP_URL = savedUrl;
                 } else {
-                    localStorage.setItem('WEB_APP_URL', WEB_APP_URL); // Guarda o URL padrão na primeira vez
+                    localStorage.setItem('WEB_APP_URL', WEB_APP_URL);
                 }
                 
                 if (!WEB_APP_URL) {
@@ -385,9 +381,11 @@
             elements.saveSettingsBtn.textContent = 'Salvando...';
 
             try {
-                await apiPost('saveConfiguration', config);
-                showNotification('Configurações salvas. A recarregar dados...', 'success');
-                loadInitialData();
+                const response = await apiPost('saveConfiguration', config);
+                 showNotification(response.message, response.success ? 'success' : 'error');
+                if (response.success) {
+                    loadInitialData();
+                }
             } catch (error) {
                 showNotification(`Erro ao salvar: ${error.message}`, 'error');
             } finally {
@@ -441,14 +439,16 @@
                         descriptor: JSON.stringify(Array.from(descriptorToSave)) 
                     };
                     try {
-                        await apiPost('savePerson', personData);
-                        showNotification(`${name} salvo com sucesso! A recarregar...`, 'success');
-                        elements.personNameInput.value = '';
-                        elements.personEmailInput.value = '';
-                        elements.registerImage.src = 'https://placehold.co/200x200/e2e8f0/adb5bd?text=Sua+Foto';
-                        registerFile = null;
-                        tempDescriptorForRegistration = null;
-                        loadInitialData();
+                        const response = await apiPost('savePerson', personData);
+                        showNotification(response.message, response.success ? 'success' : 'error');
+                        if (response.success) {
+                            elements.personNameInput.value = '';
+                            elements.personEmailInput.value = '';
+                            elements.registerImage.src = 'https://placehold.co/200x200/e2e8f0/adb5bd?text=Sua+Foto';
+                            registerFile = null;
+                            tempDescriptorForRegistration = null;
+                            loadInitialData();
+                        }
                     } catch (e) {
                         showNotification(`Erro ao salvar: ${e.message}`, 'error');
                     } finally {
@@ -742,9 +742,11 @@
                 elements.confirmation.confirmBtn.disabled = true;
                 elements.confirmation.confirmBtn.textContent = 'Excluindo...';
                 try {
-                    await apiPost('deletePerson', { email });
-                    showNotification(`${name} foi excluído com sucesso.`, 'success');
-                    loadInitialData(); // Recarrega os dados após a exclusão
+                    const response = await apiPost('deletePerson', { email });
+                    showNotification(response.message, response.success ? 'success' : 'error');
+                    if (response.success) {
+                        loadInitialData();
+                    }
                 } catch (error) {
                     showNotification(`Erro ao excluir: ${error.message}`, 'error');
                 } finally {
@@ -836,10 +838,10 @@
                 btn.disabled = true;
                 btn.textContent = 'Marcando...';
                 try {
-                    await apiPost('markAttendance', person);
+                    const response = await apiPost('markAttendance', person);
                     btn.textContent = 'Presente ✔️';
                     btn.className = 'bg-green-500 text-white text-sm py-1 px-3 rounded-md';
-                    showNotification(`Presença de ${person.name} marcada.`, 'success');
+                    showNotification(response.message, response.success ? 'success' : 'error');
                 } catch(err) {
                     showNotification(`Erro ao marcar presença: ${err.message}`, 'error');
                     btn.disabled = false;
